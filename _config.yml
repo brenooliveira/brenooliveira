@@ -3,7 +3,8 @@ title: Breno Oliveira
 email: breno26 [at] gmail [dot] com
 description: ""
 baseurl: ""
-url: "http://brenooliveira.com"
+# url: "http://brenooliveira.com.br"
+url: "http://localhost:3000"
 twitter_username: brenoholiveira
 github_username:  brenooliveira
 linkedin_username: br.linkedin.com/pub/breno-oliveira/a/713/54a/
