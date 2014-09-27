@@ -23,77 +23,103 @@ Para não ficar muito pesado hoje vamos falar de sobre o Princípio de Responsab
 O princípio de responsabilidade única segundo Uncle Bob é que uma classe deve fazer apenas uma coisa e muito bem feita, ou seja, ela deve ter apenas uma responsabilidade. Isso também facilita a crição de seus testes, afinal o trabalho daquela classe é muito bem definido, ela tem um proposíto e realizar seus teste unitários ficam bem simples.
 
 Agora vamos ilustrar melhor o cenário. Abaixo temos uma famosa classe sabe tudo.
-{% highlight ruby %}
-module Workers
-  class ReportWorker
+{% highlight ruby lineos %}
+class Relatorio
 
-    def work message
+  def relatorio_pedidos(pending_report_id)
+      #pega pedidos
+    	lines = Pedidos.where("pedidos_da_semana >= ?", 1.week.ago)
 
-      begin
+      #Gera arquivos csv
+      options[:col_sep] = ";"
+		  file = CSV.generate(options) do |csv|
+  			csv << "cabeçalho"
+  			lines.each do |line|
+  				csv << line
+  			end
+  		end
 
-        #configurações de ambiente
-        config_file = ReportsApi.settings.reports_config_file
-        config_aws = ReportsApi.settings.reports_config_aws
-        config_mandrill = ReportsApi.settings.reports_config_mandrill
+      #Uploading para Amazon S3
+      s3 = AWS::S3.new(access_key_id: "ACCESS_KEY_ID",
+				secret_access_key: "SECRET_ACCESS_KEY")
+			bucket = s3.buckets.create("bucket_name")
+      o.write(:file => file[:full_name], content_type: file[:mime_type],
+				:expires => (DateTime.now() + 0.001).httpdate(), :expiration_time => 30, :single_request => true,
+				acl: :public_read)
 
-        #get report request
-      	report = PendingReports.find(message.to_i)
-        params = from_json report.params
+      #Gera mensagem
+      link = o.public_url.to_s
+      message = "Seu relatorio está disponivel em #{link}"
 
-        #in progress
-        report.in_progress
-        report.save
+      #Envia e-mail
+      Mail.deliver do
+        from "bo@gmail.com"
+        to "qq@example.com"
+        subject "Seu relatório"
+        body message
+      end
 
-        #parse transaction
-      	transactions = parse_query(params, report.account_id)
-        pagination = pagination_params(params)
+    end
+  end
+end
+{% endhighlight %}
 
-        #count and limit
-        count = transactions.count
-        sum   = (transactions.sum('total_value') * 100).to_i
-        transactions = transactions.limit(pagination["limit"])
-        transactions = transactions.offset(pagination["offset"])
+Esse código pegamos de produção de um nossos serviços da empresa onde trabalho, foram omitidas algumas partes e exagerada em outras para ilustrarmos melhor, no caso o programador teve de fazer vários comentários durante o código para que não ficasse perdido. Isso já pode ser um cheiro que seu código está fazendo mais do que deve.
 
-        logger.debug("count: #{count} | sum: #{sum}")
-        orders = OrderArraySerializer.new(transactions, { root: false }.merge(pagination).merge(count: count).merge(totalValueSum: sum))
+Repare que esse código sabe desde as configurações de ambiente, informações sobre o relatório, busca, upload e envio de email, ou seja, isso não é nada bom.
 
-        #parse para objeto compativel com metodo export
-        orders_serialized = OrdersReportSerializer.new(orders)
+### O que podemos fazer para esse código ficar melhor ###
+A primeira coisa que devemos fazer é começar a extrair determinados comportamentos para clases mais específicas. Exemplo devemos extrair a busca do relatório, envio para Amazon S3 e envio de e-mail, deixando nosso código mais limpo.
 
-        #create link
-        file = Export.to(orders_serialized, report, config_file)
+#### Buscando registros ####
+A primeira coisa que podemos fazer é separar a query do activerecord para um scope.
+{% highlight ruby lineos %}
+class User
+  scope :pedidos_da_semana, -> { where("pedidos_da_semana >= ?", 1.week.ago) }
+end
+{% endhighlight %}
 
-        #Uploading on Amazon S3
-        UploadManager.instance.connect config_aws
-        link = UploadManager.instance.upload file
-        logger.debug "Generated link: #{link}"
+#### Gerar CSV ####
+Um próximo paso bem interessante seria separar a classe responsável por gerar o CSV, podemos deixar da seguinte forma:
+{% highlight ruby lineos %}
+class CsvCompiler
+  attr_accessor :data
+  def initialize(data)
+    self.data = Array(data)
+  end
 
-        report.processed(link)
-        report.save
-
-        #Send email notification
-        EmailNotification.send("extrato de pedidos", config_mandrill, report)
-
-        #accept message
-        ack!
-
-      rescue => e
-        logger.error e
-        logger.error e.backtrace
-
-        #report fail
-        report.fail(e.message)
-        report.save
-
-        #reject message
-        false
-
+  def format
+    options[:col_sep] = ";"
+    file = CSV.generate(options) do |csv|
+      csv << "cabeçalho"
+      lines.each do |line|
+        csv << line
       end
     end
   end
 end
 {% endhighlight %}
 
-Esse código pegamos de produção de um nossos serviços da empresa onde trabalho, ele ilustra tão bem que o programador teve de fazer vários comentários durante o código para que não ficasse perdido. Isso já pode ser um cheiro que seu código está fazendo mais do que deve.
+#### Envio de e-mail ####
+Outra tarefa importante é o envio de e-mail
 
-Repare que esse código sabe desde as configurações de ambiente, informações sobre o relatório, busca, serialização, upload e envio de email.
+{% highlight ruby lineos %}
+class ReportMailer
+  attr_accessor :report, :recipient
+
+  def intiialize(report:, recipient:)
+    self.report = report
+    self.recipient = recipient
+  end
+
+  def deliver!
+    mail = Mail.new do
+      from "jjbohn@gmail.com"
+      to recipient
+      subject report.public_link
+    end
+
+    mail.deliver!
+  end
+end
+{% endhighlight %}
