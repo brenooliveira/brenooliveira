@@ -139,9 +139,9 @@ class ReportMailer
 
   def deliver!
     mail = Mail.new do
-      from "jjbohn@gmail.com"
+      from "teste@gmail.com"
       to recipient
-      subject report.name
+      subject "Seu relátorio está pronto"
     end
 
     mail.deliver!
@@ -178,4 +178,4 @@ Para utilizar seria apenas
 ReportMailer.new(OrderWeeklyReport, "breno@example.com")
 {% endhighlight %}
 
-Como pode observar dividimos o código em diversas partes, pense em dividir para conquistar, agora cada parte tem sua responsabilidade bem definida facilitando a legibilidade do código e criação de testes. 
+Como pode observar dividimos o código em diversas partes, pense em dividir para conquistar, agora cada parte tem sua responsabilidade bem definida facilitando a legibilidade do código e criação de testes.
