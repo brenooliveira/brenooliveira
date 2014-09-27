@@ -4,9 +4,14 @@ title:  "Melhorando como Pragramador com princípios SOLID"
 date:   2014-08-30 22:19:45
 categories: engenharia de software
 ---
+## TL;DR ##
+Defina uma única responsabilidade para as suas classes, isso vai tornar seu cógido mais legível e irá facilitar criação de testes unitários.
+Refatore suas classes extraindo comportamentos para outras classes e compartilhe esses comportamentos através da composição.
 
+### Melhorando como Pragramador com princípios SOLID ###
 Vamos falar de SOLID? WTF? Vamos falar de estado solido da matéria? É sobre química ou desenvolvimento de software que vamos falar?
 Na verdade SOLID é um termo de desenvolvimento de software elaborado por [Robert C. Martin (Uncle Bob)](http://en.wikipedia.org/wiki/Robert_Cecil_Martin) no começo dos anos 2000.
+
 #### Mas afinal o que é SOLID? ####
 
 |Letra  | Princípio             |
@@ -43,8 +48,8 @@ class Relatorio
       s3 = AWS::S3.new(access_key_id: "ACCESS_KEY_ID",
 				secret_access_key: "SECRET_ACCESS_KEY")
 			bucket = s3.buckets.create("bucket_name")
-      o.write(:file => file[:full_name], content_type: file[:mime_type],
-				:expires => (DateTime.now() + 0.001).httpdate(), :expiration_time => 30, :single_request => true,
+      o.write(file: file[:full_name], content_type: file[:mime_type],
+				expires: (DateTime.now() + 0.001).httpdate(), expiration_time: 30, single_request: true,
 				acl: :public_read)
 
       #Gera mensagem
@@ -70,12 +75,13 @@ Repare que esse código sabe desde as configurações de ambiente, informações
 
 ### O que podemos fazer para esse código ficar melhor ###
 A primeira coisa que devemos fazer é começar a extrair determinados comportamentos para clases mais específicas. Exemplo devemos extrair a busca do relatório, envio para Amazon S3 e envio de e-mail, deixando nosso código mais limpo.
+Alguns detalhes de implementação vou pular pois nosso objetivo é apenas mostrar como podemos deixar o código mais elegante.
 
 #### Buscando registros ####
 A primeira coisa que podemos fazer é separar a query do activerecord para um scope.
 {% highlight ruby lineos %}
 class User
-  scope :pedidos_da_semana, -> { where("pedidos_da_semana >= ?", 1.week.ago) }
+  scope :order_weekly, -> { where("pedidos_da_semana >= ?", 1.week.ago) }
 end
 {% endhighlight %}
 
@@ -100,6 +106,25 @@ class CsvCompiler
 end
 {% endhighlight %}
 
+#### Upload para Amazon S3 ####
+Outra parte que deve ser separada é o upload do relatório, apenas retornando sua URL pública.
+
+{% highlight ruby lineos %}
+class ReportUpload
+  def upload(file)
+    s3 = AWS::S3.new(access_key_id: "ACCESS_KEY_ID", secret_access_key: "SECRET_ACCESS_KEY")
+    bucket = s3.buckets.create("bucket_name")
+
+    o.write(file: file, content_type: "application/csv",
+      expires: (DateTime.now() + 0.001).httpdate(), expiration_time: 30, single_request: true,
+      acl: :public_read)
+
+    o.public_url
+  end
+end
+{% endhighlight %}
+
+
 #### Envio de e-mail ####
 Outra tarefa importante é o envio de e-mail
 
@@ -116,10 +141,41 @@ class ReportMailer
     mail = Mail.new do
       from "jjbohn@gmail.com"
       to recipient
-      subject report.public_link
+      subject report.name
     end
 
     mail.deliver!
   end
 end
 {% endhighlight %}
+
+#### Juntando as partes ####
+Bom agora precisamos de um cara para poder chamar todas as partes necessárias para montar esse relátorio. No caso estamos fazendo um relátorio de pedidos da semana então vamos criar uma classe para isso.
+
+{% highlight ruby lineos %}
+class OrderWeeklyReport
+  def self.name
+    "Relatorio de pedidos"
+  end
+
+  def self.formatter
+    CsvCompiler
+  end
+
+  def self.data
+    User.order_weekly
+  end
+
+  def public_link
+    ReportUpload
+  end
+end
+{% endhighlight %}
+
+Para utilizar seria apenas
+
+{% highlight ruby lineos %}
+ReportMailer.new(OrderWeeklyReport, "breno@example.com")
+{% endhighlight %}
+
+Como pode observar dividimos o código em diversas partes, pense em dividir para conquistar, agora cada parte tem sua responsabilidade bem definida facilitando a legibilidade do código e criação de testes. 
