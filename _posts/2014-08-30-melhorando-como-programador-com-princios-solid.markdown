@@ -86,7 +86,7 @@ end
 {% endhighlight %}
 
 #### Gerar CSV ####
-Um próximo paso bem interessante seria separar a classe responsável por gerar o CSV, podemos deixar da seguinte forma:
+Um próximo passo bem interessante seria separar a classe responsável por gerar o CSV, podemos deixar da seguinte forma:
 {% highlight ruby lineos %}
 class CsvCompiler
   attr_accessor :data
